@@ -116,13 +116,25 @@ begin
     port map(
         -- Clock out ports
         clk_out1 => clock_12,
-        clk_out2 => clock_6,
+        clk_out2 => open, -- clock_6,
         -- Status and control signals
         reset => reset,
         locked => open, -- pll_locked
         -- Clock in ports
         clk_in1 => clk
     );
+
+    -- get 6M from 12M clock
+    process (reset, clock_12)
+    begin
+        if reset = '1' then
+            clock_6 <= '0';
+        else
+            if rising_edge(clock_12) then
+                clock_6 <= not clock_6;
+            end if;
+        end if;
+    end process;
 
     -- burnin rubber
     burnin_rubber : entity work.burnin_rubber
