@@ -16,8 +16,9 @@
 --
 -- Main features :
 --  PS2 keyboard input @onboard USB HID (PS/2 emulation)
---  Joystick input     @JXADC pins 1/2/3/4/7 = right/left/down/up/jump (active low)
---  Audio pwm output   @PmodAMP2 on JA pins 1/2/4; sw15 = audio disable, sw14 = gain
+--  Joystick input     @JA pins 1/2/3/4/7 = right/left/down/up/jump (active low)
+--  Audio pwm output   @PmodAMP2 on JXADC pins 1/2/4; sw15 = audio disable
+--  Scanlines          sw14 = alternate lines at 50% (31kHz only)
 --  31kHz VGA via the MiST scandoubler; sw13 = 15kHz TV (csync on hs)
 --
 -- Uses 1 MMCM (clk_wiz_0) for 12MHz from 100MHz
@@ -68,7 +69,7 @@ port(
   vga_hs    : out std_logic;
   vga_vs    : out std_logic;
 
-  JXADC            : in  std_logic_vector(4 downto 0);
+  joy_n            : in  std_logic_vector(4 downto 0);
   ps2_clk          : in  std_logic;
   ps2_dat          : in  std_logic;
   O_PMODAMP2_AIN   : out std_logic;
@@ -94,7 +95,7 @@ architecture struct of burnin_rubber_basys3 is
   signal tv15Khz_mode : std_logic;
 
   signal clock_6   : std_logic := '0'; -- pixel enable (ce_x1)
-  signal scanlines : std_logic_vector(1 downto 0) := "00";
+  signal scanlines : std_logic_vector(1 downto 0);
   signal ce_x2     : std_logic := '1';
   signal video_ri  : std_logic_vector(5 downto 0);
   signal video_gi  : std_logic_vector(5 downto 0);
@@ -114,11 +115,11 @@ architecture struct of burnin_rubber_basys3 is
   -- 2-FF synchronizers for the asynchronous inputs
   signal ps2_clk_meta, ps2_clk_s : std_logic := '1';
   signal ps2_dat_meta, ps2_dat_s : std_logic := '1';
-  signal jxadc_meta, jxadc_s     : std_logic_vector(4 downto 0) := (others => '1');
+  signal stick_meta, stick_s     : std_logic_vector(4 downto 0) := (others => '1');
   signal btn_meta, btn_s         : std_logic_vector(3 downto 0) := (others => '0'); -- U, D, L, R
   attribute ASYNC_REG : string;
   attribute ASYNC_REG of ps2_clk_meta, ps2_clk_s, ps2_dat_meta, ps2_dat_s : signal is "TRUE";
-  attribute ASYNC_REG of jxadc_meta, jxadc_s, btn_meta, btn_s : signal is "TRUE";
+  attribute ASYNC_REG of stick_meta, stick_s, btn_meta, btn_s : signal is "TRUE";
 
   signal kbd_intr      : std_logic;
   signal kbd_scancode  : std_logic_vector(7 downto 0);
@@ -134,6 +135,7 @@ begin
   reset <= btnC or not mmcm_locked;
 
   tv15Khz_mode <= sw(13);
+  scanlines    <= sw(14) & '0'; -- sw14 up = 50% scanlines (31 kHz)
 
   -- Clock 12MHz for burnin rubber core
   clocks : entity work.clk_wiz_0
@@ -150,7 +152,7 @@ begin
     if rising_edge(clock_12) then
       ps2_clk_meta <= ps2_clk;      ps2_clk_s <= ps2_clk_meta;
       ps2_dat_meta <= ps2_dat;      ps2_dat_s <= ps2_dat_meta;
-      jxadc_meta   <= JXADC;        jxadc_s   <= jxadc_meta;
+      stick_meta   <= joy_n;        stick_s   <= stick_meta;
       btn_meta     <= btnU & btnD & btnL & btnR;
       btn_s        <= btn_meta;
     end if;
@@ -158,13 +160,13 @@ begin
 
   --process (reset, clock_12)
   --begin
-  --	if reset='1' then
-  --		clock_6  <= '0';
-  --	else
-  --		if rising_edge(clock_12) then
-  --				clock_6  <= not clock_6;
-  --		end if;
-  --	end if;
+  --  if reset='1' then
+  --    clock_6  <= '0';
+  --  else
+  --    if rising_edge(clock_12) then
+  --        clock_6  <= not clock_6;
+  --    end if;
+  --  end if;
   --end process;
 
   -- burnin rubber
@@ -282,13 +284,13 @@ begin
     end if;
   end process;
 
-  -- merge keyboard, JXADC joystick (active low) and buttons; player 2 mirrors
+  -- merge keyboard, JA joystick (active low) and buttons; player 2 mirrors
   -- player 1 as on the DE10-lite top
-  joyHBCPPFRLDU(0) <= kbd_key(0) or not jxadc_s(3);           -- up : accelerate (JXADC4)
-  joyHBCPPFRLDU(1) <= kbd_key(1) or not jxadc_s(2);           -- down : slow down (JXADC3)
-  joyHBCPPFRLDU(2) <= kbd_key(2) or not jxadc_s(1);           -- left  (JXADC2)
-  joyHBCPPFRLDU(3) <= kbd_key(3) or not jxadc_s(0);           -- right (JXADC1)
-  joyHBCPPFRLDU(4) <= kbd_key(4) or not jxadc_s(4);           -- jump : left ctrl (JXADC7)
+  joyHBCPPFRLDU(0) <= kbd_key(0) or not stick_s(3);           -- up : accelerate (JA4)
+  joyHBCPPFRLDU(1) <= kbd_key(1) or not stick_s(2);           -- down : slow down (JA3)
+  joyHBCPPFRLDU(2) <= kbd_key(2) or not stick_s(1);           -- left  (JA2)
+  joyHBCPPFRLDU(3) <= kbd_key(3) or not stick_s(0);           -- right (JA1)
+  joyHBCPPFRLDU(4) <= kbd_key(4) or not stick_s(4);           -- jump : left ctrl (JA7)
   joyHBCPPFRLDU(5) <= kbd_key(6) or btn_s(1);                 -- start 1 : 1 or btnL
   joyHBCPPFRLDU(6) <= kbd_key(7) or btn_s(0);                 -- start 2 : 2 or btnR
   joyHBCPPFRLDU(7) <= kbd_key(8) or kbd_key(9) or btn_s(3) or btn_s(2); -- coin : 5, 6, btnU, btnD
@@ -308,6 +310,6 @@ begin
 
   O_PMODAMP2_AIN   <= pwm_accumulator(12);
   O_PMODAMP2_SHUTD <= not sw(15); -- sw15 up = amp shut down (audio disabled)
-  O_PMODAMP2_GAIN  <= not sw(14); -- sw14 up = gain active (GAIN active low)
+  O_PMODAMP2_GAIN  <= '1';        -- fixed 6 dB gain
 
 end struct;
